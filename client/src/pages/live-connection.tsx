@@ -48,6 +48,9 @@ type CaptureSnapshot = {
   startedAt?: string | null;
   stoppedAt?: string | null;
   error?: string | null;
+  rawCapturePath?: string | null;
+  rawCaptureBytes?: number | null;
+  rawCaptureError?: string | null;
   stderrTail: string[];
   captureFilter: string;
   packetLines: number;
@@ -89,6 +92,7 @@ type LiveResponse = {
       version?: string | null;
       captureFilter: string;
       activeTransmit: boolean;
+      rawCaptureEnabled?: boolean;
       error?: string;
     };
     interfaces: CaptureInterface[];
@@ -103,6 +107,7 @@ type Session = {
   platform?: string | null;
   interfaceName?: string | null;
   interfaceAddress?: string | null;
+  capturePath?: string | null;
   packetCount?: number | null;
   doipFrameCount?: number | null;
   udsMessageCount?: number | null;
@@ -162,7 +167,7 @@ export default function LiveConnection() {
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.message || 'Unable to start passive capture.');
-      setMessage('Passive DoIP capture started. Vehicle transmit remains disabled.');
+      setMessage('Passive DoIP capture started. Raw PCAPNG recording is active; vehicle transmit remains disabled.');
       await refetchCapture();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to start passive capture.');
@@ -175,7 +180,7 @@ export default function LiveConnection() {
       const response = await fetch('/api/diagnostics/live/stop', { method: 'POST' });
       const body = await response.json();
       if (!response.ok) throw new Error(body.message || 'Unable to stop passive capture.');
-      setMessage('Passive capture stopped.');
+      setMessage('Passive capture stopped. Raw PCAPNG file is preserved locally.');
       await refetchCapture();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to stop passive capture.');
@@ -194,7 +199,8 @@ export default function LiveConnection() {
           sourceType: 'live-read-only-tshark',
           platform: data.environment.platform,
           interfaceName: selectedCapture?.label ?? capture.interfaceId ?? null,
-          captureFormat: 'live-tshark',
+          captureFormat: 'pcapng',
+          capturePath: capture.rawCapturePath ?? null,
           packetCount: capture.packetLines,
           doipFrameCount: capture.doipFrames,
           udsMessageCount: udsCount,
@@ -203,7 +209,7 @@ export default function LiveConnection() {
         }),
       });
       if (!response.ok) throw new Error((await response.json()).message || 'Unable to save capture session.');
-      setMessage('Capture summary saved to diagnostic session history.');
+      setMessage('Capture summary and raw PCAPNG path saved to diagnostic session history.');
       await queryClient.invalidateQueries({ queryKey: ['/api/diagnostics/sessions'] });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to save capture session.');
@@ -223,7 +229,7 @@ export default function LiveConnection() {
         <CardHeader><CardTitle className="text-sm">Passive live capture</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="rounded-md border border-green-500/20 bg-green-500/5 p-3 text-sm">
-            <span className="font-medium text-green-400">READ ONLY:</span> this capture adapter listens through TShark/Npcap using filter <span className="font-mono">{data?.capture.readiness.captureFilter ?? 'tcp port 13400 or udp port 13400'}</span>. It does not send DoIP discovery, routing activation, UDS requests, or other traffic to the vehicle.
+            <span className="font-medium text-green-400">READ ONLY:</span> this capture adapter listens through TShark/Npcap using filter <span className="font-mono">{data?.capture.readiness.captureFilter ?? 'tcp port 13400 or udp port 13400'}</span>. It records the same filtered traffic to PCAPNG and does not send DoIP discovery, routing activation, UDS requests, or other traffic to the vehicle.
           </div>
 
           {!data?.capture.readiness.installed ? (
@@ -244,13 +250,16 @@ export default function LiveConnection() {
             </>
           )}
 
-          <div className="grid gap-3 md:grid-cols-5">
+          <div className="grid gap-3 md:grid-cols-6">
             <Mini label="State" value={capture?.running ? 'CAPTURING' : 'Stopped'} />
             <Mini label="Packet rows" value={capture?.packetLines ?? 0} />
             <Mini label="DoIP frames" value={capture?.doipFrames ?? 0} />
             <Mini label="UDS decoded" value={udsCount} />
             <Mini label="ECU addresses" value={capture?.ecuInventory.length ?? 0} />
+            <Mini label="Raw PCAPNG" value={formatBytes(capture?.rawCaptureBytes)} />
           </div>
+          {capture?.rawCapturePath && <div className="rounded-md border border-border bg-muted/20 p-3 text-xs"><span className="text-muted-foreground">Raw capture: </span><span className="break-all font-mono">{capture.rawCapturePath}</span></div>}
+          {capture?.rawCaptureError && <p className="text-sm text-amber-400">Raw capture warning: {capture.rawCaptureError}</p>}
           {capture?.error && <p className="text-sm text-red-400">{capture.error}</p>}
           {message && <p className="text-sm text-muted-foreground">{message}</p>}
         </CardContent>
@@ -305,6 +314,7 @@ export default function LiveConnection() {
             <Row label="Node.js" value={data?.environment.nodeVersion ?? '—'} />
             <Row label="TShark" value={data?.capture.readiness.version ?? 'Not detected'} />
             <Row label="Capture backend" value={data?.capture.readiness.installed ? 'TShark + Npcap' : 'Unavailable'} />
+            <Row label="Raw recording" value={data?.capture.readiness.rawCaptureEnabled ? 'PCAPNG enabled' : 'Unavailable'} />
             <Row label="Vehicle transmit" value="Disabled by design" />
           </div>
         </CardContent>
@@ -313,12 +323,20 @@ export default function LiveConnection() {
       <Card className="mt-6">
         <CardHeader><CardTitle className="text-sm">Recent diagnostic sessions</CardTitle></CardHeader>
         <CardContent className="space-y-2">
-          {(sessionData?.sessions ?? []).slice(0, 10).map((session) => <div key={session.id} className="rounded-md border border-border p-3 text-sm"><div className="font-medium">{session.name}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{session.interfaceName || '—'} · {session.interfaceAddress || '—'} · DoIP {session.doipFrameCount ?? 0} · ECU {session.ecuCount ?? 0} · {new Date(session.createdAt).toLocaleString()}</div></div>)}
+          {(sessionData?.sessions ?? []).slice(0, 10).map((session) => <div key={session.id} className="rounded-md border border-border p-3 text-sm"><div className="font-medium">{session.name}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{session.interfaceName || '—'} · {session.interfaceAddress || '—'} · DoIP {session.doipFrameCount ?? 0} · UDS {session.udsMessageCount ?? 0} · ECU {session.ecuCount ?? 0} · {new Date(session.createdAt).toLocaleString()}</div>{session.capturePath && <div className="mt-1 break-all font-mono text-xs text-muted-foreground">{session.capturePath}</div>}</div>)}
           {!sessionData?.sessions?.length && <p className="text-sm text-muted-foreground">No diagnostic sessions saved yet.</p>}
         </CardContent>
       </Card>
     </DashboardLayout>
   );
+}
+
+function formatBytes(bytes?: number | null) {
+  if (bytes === null || bytes === undefined) return '—';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 function StatusCard({ icon: Icon, title, value }: { icon: typeof Laptop; title: string; value: string }) { return <Card><CardContent className="flex items-center justify-between p-4"><div><p className="text-xs text-muted-foreground">{title}</p><p className="mt-1 font-mono text-lg font-bold">{value}</p></div><Icon className="h-5 w-5 text-primary" /></CardContent></Card>; }
