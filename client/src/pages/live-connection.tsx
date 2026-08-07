@@ -52,6 +52,7 @@ type CaptureSnapshot = {
   captureFilter: string;
   packetLines: number;
   doipFrames: number;
+  udsMessages: number;
   totalBufferedEvents: number;
   latestEventId: number;
   events: LiveEvent[];
@@ -126,7 +127,7 @@ export default function LiveConnection() {
 
   const selectedInterface = data?.interfaces.find((item) => `${item.name}|${item.address}` === selected);
   const tsharkInterfaces = data?.capture.interfaces ?? [];
-  const udsCount = capture?.events.filter((event) => event.decoded.diagnosticMessage?.uds).length ?? 0;
+  const udsCount = capture?.udsMessages ?? 0;
 
   async function saveSession() {
     if (!selectedInterface || !data) return;
