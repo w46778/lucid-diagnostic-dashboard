@@ -1,13 +1,12 @@
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
-import { monitoringAlerts, monitoringChecks } from "@shared/schema";
+import { monitoringAlerts, monitoringChecks, diagnosticSessions } from "@shared/schema";
 
 const sqlite = new Database("data.db");
 sqlite.pragma("journal_mode = WAL");
 
 export const db = drizzle(sqlite);
 
-// Create tables on startup
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS monitoring_alerts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -28,6 +27,22 @@ sqlite.exec(`
     status TEXT NOT NULL DEFAULT 'pending',
     new_items_found INTEGER DEFAULT 0
   );
+
+  CREATE TABLE IF NOT EXISTS diagnostic_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    platform TEXT,
+    interface_name TEXT,
+    interface_address TEXT,
+    capture_format TEXT,
+    packet_count INTEGER NOT NULL DEFAULT 0,
+    doip_frame_count INTEGER NOT NULL DEFAULT 0,
+    uds_message_count INTEGER NOT NULL DEFAULT 0,
+    ecu_count INTEGER NOT NULL DEFAULT 0,
+    notes TEXT,
+    created_at TEXT NOT NULL
+  );
 `);
 
-export { monitoringAlerts, monitoringChecks };
+export { monitoringAlerts, monitoringChecks, diagnosticSessions };
