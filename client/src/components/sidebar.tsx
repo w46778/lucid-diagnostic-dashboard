@@ -1,10 +1,11 @@
 import { Link, useLocation } from 'wouter';
-import { Battery, Radio, GitBranch, Activity, Bell, Shield } from 'lucide-react';
+import { Battery, Radio, GitBranch, Activity, Bell, Shield, Stethoscope } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navItems = [
   { path: '/', label: 'Overview', icon: Activity },
   { path: '/telemetry', label: 'Telemetry', icon: Radio },
+  { path: '/diagnostics', label: 'Diagnostics', icon: Stethoscope },
   { path: '/ota-timeline', label: 'OTA Timeline', icon: GitBranch },
   { path: '/api-actions', label: 'API Actions', icon: Battery },
   { path: '/monitoring', label: 'Monitoring', icon: Bell },
@@ -53,7 +54,7 @@ export function Sidebar() {
         </div>
         <div className="hidden text-center lg:block" data-testid="api-source">
           <p className="text-xs text-muted-foreground">Schema: python-lucidmotors</p>
-          <p className="text-xs text-muted-foreground/60">Not connected to live API</p>
+          <p className="text-xs text-muted-foreground/60">Diagnostics research foundation</p>
         </div>
         <Shield className="h-4 w-4 text-muted-foreground/40 lg:hidden" />
       </div>
