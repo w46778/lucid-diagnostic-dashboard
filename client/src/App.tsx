@@ -9,6 +9,7 @@ import Telemetry from './pages/telemetry';
 import OtaTimeline from './pages/ota-timeline';
 import ApiActions from './pages/api-actions';
 import Monitoring from './pages/monitoring';
+import Diagnostics from './pages/diagnostics';
 import NotFound from './pages/not-found';
 
 function App() {
@@ -19,6 +20,7 @@ function App() {
           <Switch>
             <Route path="/" component={Dashboard} />
             <Route path="/telemetry" component={Telemetry} />
+            <Route path="/diagnostics" component={Diagnostics} />
             <Route path="/ota-timeline" component={OtaTimeline} />
             <Route path="/api-actions" component={ApiActions} />
             <Route path="/monitoring" component={Monitoring} />
