@@ -2,6 +2,7 @@ import { spawn, execFile, type ChildProcessByStdio } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
+import path from 'node:path';
 import { decodeDoipFrame, type DecodedDoipFrame } from './doip';
 
 const execFileAsync = promisify(execFile);
@@ -10,6 +11,7 @@ const MAX_EVENTS = 2000;
 const MAX_STREAM_BUFFER = 4 * 1024 * 1024;
 
 type TsharkProcess = ChildProcessByStdio<null, Readable, Readable>;
+type TsharkRawProcess = ChildProcessByStdio<null, null, Readable>;
 
 export type TsharkInterface = { id: string; label: string; raw: string };
 export type LiveDoipEvent = {
@@ -40,11 +42,14 @@ type CaptureState = {
   startedAt?: string;
   stoppedAt?: string;
   error?: string;
+  rawCapturePath?: string;
+  rawCaptureError?: string;
   stderrTail: string[];
   packetLines: number;
   doipFrames: number;
   udsMessages: number;
   process?: TsharkProcess;
+  rawProcess?: TsharkRawProcess;
   events: LiveDoipEvent[];
   streams: Map<string, StreamState>;
   inventory: Map<string, LiveEcuSummary>;
@@ -84,6 +89,13 @@ async function resolveTshark(): Promise<string> {
   throw new Error('TShark was not found. Install Wireshark with Npcap and ensure tshark.exe is available.');
 }
 
+function createRawCapturePath(): string {
+  const captureDir = path.resolve(process.env.CAPTURE_DIR?.trim() || 'captures');
+  fs.mkdirSync(captureDir, { recursive: true });
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  return path.join(captureDir, `lucid-doip-${timestamp}.pcapng`);
+}
+
 export async function getTsharkReadiness() {
   try {
     const executable = await resolveTshark();
@@ -94,9 +106,11 @@ export async function getTsharkReadiness() {
       version: stdout.split(/\r?\n/).find(Boolean) ?? 'TShark detected',
       captureFilter: CAPTURE_FILTER,
       activeTransmit: false,
+      rawCaptureEnabled: true,
       notes: [
         'TShark is invoked in capture mode only.',
         'Capture is restricted to TCP/UDP port 13400 (DoIP).',
+        'A second passive TShark process records the filtered packets to a local PCAPNG file for later re-analysis.',
         'This module does not generate DoIP discovery, routing activation, UDS requests, or other vehicle traffic.',
       ],
     };
@@ -107,6 +121,7 @@ export async function getTsharkReadiness() {
       version: null,
       captureFilter: CAPTURE_FILTER,
       activeTransmit: false,
+      rawCaptureEnabled: false,
       error: error instanceof Error ? error.message : 'Unable to detect TShark.',
     };
   }
@@ -263,12 +278,16 @@ export async function startPassiveCapture(interfaceId: string) {
   if (!interfaceId.trim()) throw new Error('A TShark capture interface must be selected.');
 
   const executable = await resolveTshark();
+  const rawCapturePath = createRawCapturePath();
+
   Object.assign(state, {
     running: true,
     interfaceId: interfaceId.trim(),
     startedAt: new Date().toISOString(),
     stoppedAt: undefined,
     error: undefined,
+    rawCapturePath,
+    rawCaptureError: undefined,
     stderrTail: [],
     packetLines: 0,
     doipFrames: 0,
@@ -277,6 +296,26 @@ export async function startPassiveCapture(interfaceId: string) {
     streams: new Map<string, StreamState>(),
     inventory: new Map<string, LiveEcuSummary>(),
     nextEventId: 1,
+  });
+
+  const rawArgs = [
+    '-n', '-i', interfaceId.trim(), '-f', CAPTURE_FILTER,
+    '-F', 'pcapng', '-w', rawCapturePath,
+  ];
+  const rawChild = spawn(executable, rawArgs, { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+  state.rawProcess = rawChild;
+  rawChild.stderr.on('data', (chunk: Buffer | string) => appendStderr(`[raw] ${chunk.toString()}`));
+  rawChild.on('error', (error) => {
+    state.rawCaptureError = error.message;
+    state.rawProcess = undefined;
+  });
+  rawChild.on('exit', (code, signal) => {
+    state.rawProcess = undefined;
+    if (code && !state.rawCaptureError) {
+      state.rawCaptureError = `Raw PCAPNG writer exited with code ${code}${signal ? ` (${signal})` : ''}.`;
+    } else if (state.running && !state.rawCaptureError) {
+      state.rawCaptureError = 'Raw PCAPNG writer stopped before the live capture ended.';
+    }
   });
 
   const args = [
@@ -297,31 +336,53 @@ export async function startPassiveCapture(interfaceId: string) {
     for (const line of lines) handleLine(line);
   });
   child.stderr.on('data', (chunk: Buffer | string) => appendStderr(chunk.toString()));
-  child.on('error', (error) => { state.error = error.message; state.running = false; state.stoppedAt = new Date().toISOString(); state.process = undefined; });
+  child.on('error', (error) => {
+    state.error = error.message;
+    state.running = false;
+    state.stoppedAt = new Date().toISOString();
+    state.process = undefined;
+    state.rawProcess?.kill('SIGTERM');
+  });
   child.on('exit', (code, signal) => {
     if (stdout.trim()) handleLine(stdout);
     state.running = false;
     state.stoppedAt = new Date().toISOString();
     state.process = undefined;
+    state.rawProcess?.kill('SIGTERM');
     if (code && !state.error) state.error = `TShark exited with code ${code}${signal ? ` (${signal})` : ''}.`;
   });
   return getPassiveCaptureSnapshot();
 }
 
 export function stopPassiveCapture() {
-  if (state.running) state.process?.kill('SIGTERM');
+  if (state.running) {
+    state.process?.kill('SIGTERM');
+    state.rawProcess?.kill('SIGTERM');
+  }
   state.running = false;
   state.stoppedAt = new Date().toISOString();
   return getPassiveCaptureSnapshot();
 }
 
 export function getPassiveCaptureSnapshot(afterEventId = 0) {
+  let rawCaptureBytes: number | null = null;
+  if (state.rawCapturePath) {
+    try {
+      rawCaptureBytes = fs.statSync(state.rawCapturePath).size;
+    } catch {
+      rawCaptureBytes = null;
+    }
+  }
+
   return {
     running: state.running,
     interfaceId: state.interfaceId ?? null,
     startedAt: state.startedAt ?? null,
     stoppedAt: state.stoppedAt ?? null,
     error: state.error ?? null,
+    rawCapturePath: state.rawCapturePath ?? null,
+    rawCaptureBytes,
+    rawCaptureError: state.rawCaptureError ?? null,
     stderrTail: state.stderrTail,
     captureFilter: CAPTURE_FILTER,
     packetLines: state.packetLines,
