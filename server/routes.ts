@@ -127,6 +127,7 @@ export function registerRoutes(_server: Server, app: Express) {
         interfaceName: typeof req.body?.interfaceName === "string" ? req.body.interfaceName : null,
         interfaceAddress: typeof req.body?.interfaceAddress === "string" ? req.body.interfaceAddress : null,
         captureFormat: typeof req.body?.captureFormat === "string" ? req.body.captureFormat : null,
+        capturePath: typeof req.body?.capturePath === "string" ? req.body.capturePath : null,
         packetCount: Number.isFinite(req.body?.packetCount) ? Math.max(0, Math.trunc(req.body.packetCount)) : 0,
         doipFrameCount: Number.isFinite(req.body?.doipFrameCount) ? Math.max(0, Math.trunc(req.body.doipFrameCount)) : 0,
         udsMessageCount: Number.isFinite(req.body?.udsMessageCount) ? Math.max(0, Math.trunc(req.body.udsMessageCount)) : 0,
