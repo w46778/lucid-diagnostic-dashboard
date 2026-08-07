@@ -18,6 +18,7 @@ import {
   demoDtcs,
   demoDids,
 } from "../shared/diagnostics";
+import { decodeDoipFrame, doipDecoderInfo } from "./diagnostics/doip";
 import { db } from "./storage";
 import { monitoringAlerts, monitoringChecks } from "../shared/schema";
 import { desc } from "drizzle-orm";
@@ -50,12 +51,27 @@ export function registerRoutes(_server: Server, app: Express) {
       ecus: demoEcus,
       dtcs: demoDtcs,
       dids: demoDids,
+      doip: doipDecoderInfo,
       safeguards: {
         writeOperationsEnabled: false,
         securityBypassImplemented: false,
         proprietaryMappingsPreFilled: false,
       },
     });
+  });
+
+  // Offline DoIP capture decoder. This endpoint parses user-supplied bytes only;
+  // it never opens a socket to a vehicle or transmits diagnostic traffic.
+  app.post("/api/diagnostics/doip/decode", (req, res) => {
+    try {
+      const hex = typeof req.body?.hex === "string" ? req.body.hex : "";
+      const frame = decodeDoipFrame(hex);
+      res.json({ frame, decoder: doipDecoderInfo });
+    } catch (error) {
+      res.status(400).json({
+        message: error instanceof Error ? error.message : "Unable to decode DoIP frame.",
+      });
+    }
   });
 
   // OTA Timeline endpoint
