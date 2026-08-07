@@ -1,30 +1,32 @@
-import { Switch, Route, Router } from "wouter";
-import { useHashLocation } from "wouter/use-hash-location";
-import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
-import { Toaster } from "@/components/ui/toaster";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import NotFound from "@/pages/not-found";
-
-function AppRouter() {
-  return (
-    <Switch>
-      {/* Register a <Route path="..." component={...} /> for EVERY page linked in your sidebar/nav. Missing routes cause 404. */}
-      {/* <Route path="/" component={Home}/> */}
-      <Route component={NotFound} />
-    </Switch>
-  );
-}
+import { Switch, Route, Router } from 'wouter';
+import { useHashLocation } from 'wouter/use-hash-location';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from './lib/queryClient';
+import { Toaster } from './components/ui/toaster';
+import { ThemeProvider } from './components/theme-provider';
+import Dashboard from './pages/dashboard';
+import Telemetry from './pages/telemetry';
+import OtaTimeline from './pages/ota-timeline';
+import ApiActions from './pages/api-actions';
+import Monitoring from './pages/monitoring';
+import NotFound from './pages/not-found';
 
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
+      <ThemeProvider>
         <Router hook={useHashLocation}>
-          <AppRouter />
+          <Switch>
+            <Route path="/" component={Dashboard} />
+            <Route path="/telemetry" component={Telemetry} />
+            <Route path="/ota-timeline" component={OtaTimeline} />
+            <Route path="/api-actions" component={ApiActions} />
+            <Route path="/monitoring" component={Monitoring} />
+            <Route component={NotFound} />
+          </Switch>
         </Router>
-      </TooltipProvider>
+        <Toaster />
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }

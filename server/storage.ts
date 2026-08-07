@@ -1,32 +1,33 @@
-import { users } from '@shared/schema';
-import type { User, InsertUser } from '@shared/schema';
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
-import { eq } from "drizzle-orm";
+import { monitoringAlerts, monitoringChecks } from "@shared/schema";
 
 const sqlite = new Database("data.db");
 sqlite.pragma("journal_mode = WAL");
 
 export const db = drizzle(sqlite);
 
-export interface IStorage {
-  getUser(id: number): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
-}
+// Create tables on startup
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS monitoring_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    title TEXT NOT NULL,
+    url TEXT NOT NULL,
+    summary TEXT,
+    severity TEXT NOT NULL DEFAULT 'info',
+    created_at TEXT NOT NULL
+  );
+  
+  CREATE TABLE IF NOT EXISTS monitoring_checks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_name TEXT NOT NULL,
+    source_url TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    last_checked_at TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    new_items_found INTEGER DEFAULT 0
+  );
+`);
 
-export class DatabaseStorage implements IStorage {
-  async getUser(id: number): Promise<User | undefined> {
-    return db.select().from(users).where(eq(users.id, id)).get();
-  }
-
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return db.select().from(users).where(eq(users.username, username)).get();
-  }
-
-  async createUser(insertUser: InsertUser): Promise<User> {
-    return db.insert(users).values(insertUser).returning().get();
-  }
-}
-
-export const storage = new DatabaseStorage();
+export { monitoringAlerts, monitoringChecks };
