@@ -19,12 +19,12 @@ import {
   demoDids,
 } from "../shared/diagnostics";
 import { decodeDoipFrame, doipDecoderInfo } from "./diagnostics/doip";
+import { analyzeClassicPcap } from "./diagnostics/pcap";
 import { db } from "./storage";
 import { monitoringAlerts, monitoringChecks } from "../shared/schema";
 import { desc } from "drizzle-orm";
 
 export function registerRoutes(_server: Server, app: Express) {
-  // Telemetry endpoint — returns demo vehicle telemetry data
   app.get("/api/telemetry", (_req, res) => {
     const grouped: Record<string, TelemetryField[]> = {};
     for (const field of demoTelemetry) {
@@ -42,8 +42,6 @@ export function registerRoutes(_server: Server, app: Express) {
     });
   });
 
-  // Diagnostics research endpoint. Intentionally read-only: no flashing,
-  // configuration writes, security bypasses, or guessed proprietary IDs.
   app.get("/api/diagnostics", (_req, res) => {
     res.json({
       mode: "research",
@@ -60,8 +58,6 @@ export function registerRoutes(_server: Server, app: Express) {
     });
   });
 
-  // Offline DoIP capture decoder. This endpoint parses user-supplied bytes only;
-  // it never opens a socket to a vehicle or transmits diagnostic traffic.
   app.post("/api/diagnostics/doip/decode", (req, res) => {
     try {
       const hex = typeof req.body?.hex === "string" ? req.body.hex : "";
@@ -74,7 +70,25 @@ export function registerRoutes(_server: Server, app: Express) {
     }
   });
 
-  // OTA Timeline endpoint
+  // Offline PCAP analysis. Accepts a base64-encoded classic PCAP capture and
+  // extracts only Ethernet/IPv4 DoIP traffic. It never opens a network socket.
+  app.post("/api/diagnostics/pcap/analyze", (req, res) => {
+    try {
+      const base64 = typeof req.body?.base64 === "string" ? req.body.base64 : "";
+      if (!base64) return res.status(400).json({ message: "Missing base64 PCAP payload." });
+      const capture = Buffer.from(base64, "base64");
+      if (!capture.length) return res.status(400).json({ message: "PCAP payload is empty." });
+      if (capture.length > 25 * 1024 * 1024) {
+        return res.status(413).json({ message: "PCAP is larger than the 25 MB inline analysis limit." });
+      }
+      res.json(analyzeClassicPcap(capture));
+    } catch (error) {
+      res.status(400).json({
+        message: error instanceof Error ? error.message : "Unable to analyze PCAP capture.",
+      });
+    }
+  });
+
   app.get("/api/ota-timeline", (_req, res) => {
     res.json({
       updates: otaTimeline,
@@ -85,7 +99,6 @@ export function registerRoutes(_server: Server, app: Express) {
     });
   });
 
-  // API Actions endpoint
   app.get("/api/actions", (_req, res) => {
     const testedActions = apiActions.filter((a: ApiAction) => a.testedInActions);
     res.json({
@@ -98,12 +111,10 @@ export function registerRoutes(_server: Server, app: Express) {
     });
   });
 
-  // Monitoring sources endpoint
   app.get("/api/monitoring/sources", (_req, res) => {
     res.json({ sources: monitoringSources });
   });
 
-  // Monitoring alerts from DB
   app.get("/api/monitoring/alerts", (_req, res) => {
     try {
       const alerts = db.select().from(monitoringAlerts).orderBy(desc(monitoringAlerts.createdAt)).limit(50).all();
@@ -113,7 +124,6 @@ export function registerRoutes(_server: Server, app: Express) {
     }
   });
 
-  // Monitoring checks from DB
   app.get("/api/monitoring/status", (_req, res) => {
     try {
       const checks = db.select().from(monitoringChecks).all();
@@ -123,12 +133,10 @@ export function registerRoutes(_server: Server, app: Express) {
     }
   });
 
-  // Enum reference data
   app.get("/api/enums", (_req, res) => {
     res.json(enumData);
   });
 
-  // Dashboard stats
   app.get("/api/stats", (_req, res) => {
     res.json({
       telemetryFields: demoTelemetry.length,
