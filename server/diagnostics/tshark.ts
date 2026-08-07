@@ -43,9 +43,11 @@ type CaptureState = {
   stderrTail: string[];
   packetLines: number;
   doipFrames: number;
+  udsMessages: number;
   process?: TsharkProcess;
   events: LiveDoipEvent[];
   streams: Map<string, StreamState>;
+  inventory: Map<string, LiveEcuSummary>;
   nextEventId: number;
 };
 
@@ -54,8 +56,10 @@ const state: CaptureState = {
   stderrTail: [],
   packetLines: 0,
   doipFrames: 0,
+  udsMessages: 0,
   events: [],
   streams: new Map(),
+  inventory: new Map(),
   nextEventId: 1,
 };
 
@@ -140,6 +144,40 @@ function splitCompleteDoipFrames(buffer: Buffer): { frames: Buffer[]; remainder:
   return { frames, remainder: buffer.subarray(offset) };
 }
 
+function updateInventory(event: LiveDoipEvent) {
+  const touch = (address: string, direction: 'sent' | 'received') => {
+    const current = state.inventory.get(address) ?? {
+      logicalAddress: address,
+      messageCount: 0,
+      sentCount: 0,
+      receivedCount: 0,
+      ips: [],
+    };
+    current.messageCount += 1;
+    if (direction === 'sent') current.sentCount += 1;
+    else current.receivedCount += 1;
+    for (const ip of [event.sourceIp, event.destinationIp]) {
+      if (ip && !current.ips.includes(ip)) current.ips.push(ip);
+    }
+    state.inventory.set(address, current);
+    return current;
+  };
+
+  const announcement = event.decoded.vehicleAnnouncement;
+  if (announcement) {
+    const ecu = touch(announcement.logicalAddress, 'sent');
+    ecu.vin = announcement.vin || ecu.vin;
+    ecu.eid = announcement.eid;
+    ecu.gid = announcement.gid;
+  }
+
+  const diagnostic = event.decoded.diagnosticMessage;
+  if (diagnostic) {
+    touch(diagnostic.sourceAddress, 'sent');
+    touch(diagnostic.targetAddress, 'received');
+  }
+}
+
 function pushDecoded(
   transport: 'tcp' | 'udp', timestamp: string,
   sourceIp: string | undefined, destinationIp: string | undefined,
@@ -147,11 +185,14 @@ function pushDecoded(
   frame: Buffer,
 ) {
   try {
-    state.events.push({
-      id: state.nextEventId++, timestamp, transport, sourceIp, destinationIp, sourcePort, destinationPort,
-      decoded: decodeDoipFrame(frame.toString('hex')),
-    });
+    const decoded = decodeDoipFrame(frame.toString('hex'));
+    const event: LiveDoipEvent = {
+      id: state.nextEventId++, timestamp, transport, sourceIp, destinationIp, sourcePort, destinationPort, decoded,
+    };
+    state.events.push(event);
     state.doipFrames += 1;
+    if (decoded.diagnosticMessage?.uds) state.udsMessages += 1;
+    updateInventory(event);
     if (state.events.length > MAX_EVENTS) state.events.splice(0, state.events.length - MAX_EVENTS);
   } catch {
     // Ignore malformed bytes while keeping capture alive.
@@ -231,8 +272,10 @@ export async function startPassiveCapture(interfaceId: string) {
     stderrTail: [],
     packetLines: 0,
     doipFrames: 0,
+    udsMessages: 0,
     events: [],
     streams: new Map<string, StreamState>(),
+    inventory: new Map<string, LiveEcuSummary>(),
     nextEventId: 1,
   });
 
@@ -272,28 +315,6 @@ export function stopPassiveCapture() {
   return getPassiveCaptureSnapshot();
 }
 
-function buildInventory(): LiveEcuSummary[] {
-  const map = new Map<string, LiveEcuSummary>();
-  const touch = (address: string, direction: 'sent' | 'received', event: LiveDoipEvent) => {
-    const current = map.get(address) ?? { logicalAddress: address, messageCount: 0, sentCount: 0, receivedCount: 0, ips: [] };
-    current.messageCount += 1;
-    direction === 'sent' ? current.sentCount += 1 : current.receivedCount += 1;
-    for (const ip of [event.sourceIp, event.destinationIp]) if (ip && !current.ips.includes(ip)) current.ips.push(ip);
-    map.set(address, current);
-    return current;
-  };
-  for (const event of state.events) {
-    const announcement = event.decoded.vehicleAnnouncement;
-    if (announcement) {
-      const ecu = touch(announcement.logicalAddress, 'sent', event);
-      ecu.vin = announcement.vin || ecu.vin; ecu.eid = announcement.eid; ecu.gid = announcement.gid;
-    }
-    const diagnostic = event.decoded.diagnosticMessage;
-    if (diagnostic) { touch(diagnostic.sourceAddress, 'sent', event); touch(diagnostic.targetAddress, 'received', event); }
-  }
-  return Array.from(map.values()).sort((a, b) => a.logicalAddress.localeCompare(b.logicalAddress));
-}
-
 export function getPassiveCaptureSnapshot(afterEventId = 0) {
   return {
     running: state.running,
@@ -305,10 +326,11 @@ export function getPassiveCaptureSnapshot(afterEventId = 0) {
     captureFilter: CAPTURE_FILTER,
     packetLines: state.packetLines,
     doipFrames: state.doipFrames,
+    udsMessages: state.udsMessages,
     totalBufferedEvents: state.events.length,
     latestEventId: state.events.at(-1)?.id ?? 0,
     events: state.events.filter((event) => event.id > afterEventId),
-    ecuInventory: buildInventory(),
+    ecuInventory: Array.from(state.inventory.values()).sort((a, b) => a.logicalAddress.localeCompare(b.logicalAddress)),
     transmitEnabled: false,
   };
 }
