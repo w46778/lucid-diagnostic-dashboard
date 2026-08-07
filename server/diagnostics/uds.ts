@@ -89,8 +89,9 @@ export function decodeUdsPayload(userData: Buffer): UdsMessage | undefined {
 
   let direction: UdsMessage['direction'] = 'request';
   let requestSid = sid;
-  if (sid >= 0x40 && sid <= 0x7e) {
-    requestSid = sid - 0x40;
+  const positiveRequestSid = sid - 0x40;
+  if (sid >= 0x40 && serviceNames[positiveRequestSid]) {
+    requestSid = positiveRequestSid;
     direction = 'positive-response';
   }
 
@@ -111,14 +112,23 @@ export function decodeUdsPayload(userData: Buffer): UdsMessage | undefined {
     result.subFunction = toHex(userData[1]);
   }
 
-  if (requestSid === 0x22 || requestSid === 0x2e) {
-    const start = direction === 'positive-response' ? 1 : 1;
-    const dids: string[] = [];
-    for (let i = start; i + 1 < userData.length; i += 2) {
-      dids.push(toHex(userData.readUInt16BE(i), 4));
-      if (direction === 'positive-response') break;
+  if (requestSid === 0x22 && userData.length >= 3) {
+    if (direction === 'positive-response') {
+      result.dids = [toHex(userData.readUInt16BE(1), 4)];
+    } else {
+      const dids: string[] = [];
+      for (let i = 1; i + 1 < userData.length; i += 2) {
+        dids.push(toHex(userData.readUInt16BE(i), 4));
+      }
+      if (dids.length) result.dids = dids;
     }
-    if (dids.length) result.dids = dids;
+  }
+
+  if (requestSid === 0x2e && userData.length >= 3) {
+    result.dids = [toHex(userData.readUInt16BE(1), 4)];
+    if (direction !== 'positive-response' && userData.length > 3) {
+      notes.push('Bytes after the first WriteDataByIdentifier DID are data, not additional DIDs.');
+    }
   }
 
   if (requestSid === 0x31 && userData.length >= 4) {
