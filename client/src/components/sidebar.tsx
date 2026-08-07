@@ -1,11 +1,12 @@
 import { Link, useLocation } from 'wouter';
-import { Battery, Radio, GitBranch, Activity, Bell, Shield, Stethoscope } from 'lucide-react';
+import { Battery, Radio, GitBranch, Activity, Bell, Shield, Stethoscope, Cable } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navItems = [
   { path: '/', label: 'Overview', icon: Activity },
   { path: '/telemetry', label: 'Telemetry', icon: Radio },
   { path: '/diagnostics', label: 'Diagnostics', icon: Stethoscope },
+  { path: '/live-connection', label: 'Live Connection', icon: Cable },
   { path: '/ota-timeline', label: 'OTA Timeline', icon: GitBranch },
   { path: '/api-actions', label: 'API Actions', icon: Battery },
   { path: '/monitoring', label: 'Monitoring', icon: Bell },
@@ -29,17 +30,7 @@ export function Sidebar() {
           const Icon = item.icon;
           const isActive = location === item.path;
           return (
-            <Link
-              key={item.path}
-              href={item.path}
-              data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
-              className={cn(
-                'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-              )}
-            >
+            <Link key={item.path} href={item.path} data-testid={`nav-${item.label.toLowerCase().replace(/\s+/g, '-')}`} className={cn('flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors', isActive ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground')}>
               <Icon className="h-4 w-4 shrink-0" />
               <span className="hidden lg:block">{item.label}</span>
             </Link>
@@ -48,14 +39,8 @@ export function Sidebar() {
       </nav>
 
       <div className="mt-auto flex flex-col items-center gap-2 px-2">
-        <div className="hidden items-center gap-1.5 rounded-md bg-amber-500/10 px-2.5 py-1.5 lg:flex" data-testid="api-status">
-          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-          <span className="text-xs font-medium text-amber-500">Demo Data</span>
-        </div>
-        <div className="hidden text-center lg:block" data-testid="api-source">
-          <p className="text-xs text-muted-foreground">Schema: python-lucidmotors</p>
-          <p className="text-xs text-muted-foreground/60">Diagnostics research foundation</p>
-        </div>
+        <div className="hidden items-center gap-1.5 rounded-md bg-amber-500/10 px-2.5 py-1.5 lg:flex" data-testid="api-status"><span className="h-1.5 w-1.5 rounded-full bg-amber-500" /><span className="text-xs font-medium text-amber-500">Research Mode</span></div>
+        <div className="hidden text-center lg:block" data-testid="api-source"><p className="text-xs text-muted-foreground">Cloud + local diagnostics</p><p className="text-xs text-muted-foreground/60">Live transmit disabled</p></div>
         <Shield className="h-4 w-4 text-muted-foreground/40 lg:hidden" />
       </div>
     </aside>
