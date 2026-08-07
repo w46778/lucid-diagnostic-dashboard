@@ -38,6 +38,7 @@ export default function Monitoring() {
             <p className="text-sm text-muted-foreground">
               You'll receive email alerts at w46778@gmail.com when new community-led API reverse-engineering breakthroughs
               or significant software-issue reports are posted to GitHub or major Lucid engineering forums.
+              Checks run every 6 hours.
             </p>
           </div>
           <div className="hidden items-center gap-2 rounded-md bg-success/10 px-3 py-1.5 md:flex" data-testid="monitoring-status">

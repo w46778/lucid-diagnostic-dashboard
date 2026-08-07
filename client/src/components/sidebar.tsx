@@ -47,13 +47,13 @@ export function Sidebar() {
       </nav>
 
       <div className="mt-auto flex flex-col items-center gap-2 px-2">
-        <div className="hidden items-center gap-1.5 rounded-md bg-success/10 px-2.5 py-1.5 lg:flex" data-testid="api-status">
-          <span className="h-1.5 w-1.5 rounded-full bg-success animate-pulse" />
-          <span className="text-xs font-medium text-success">API Connected</span>
+        <div className="hidden items-center gap-1.5 rounded-md bg-amber-500/10 px-2.5 py-1.5 lg:flex" data-testid="api-status">
+          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+          <span className="text-xs font-medium text-amber-500">Demo Data</span>
         </div>
         <div className="hidden text-center lg:block" data-testid="api-source">
-          <p className="text-xs text-muted-foreground">python-lucidmotors</p>
-          <p className="text-xs text-muted-foreground/60">Unofficial</p>
+          <p className="text-xs text-muted-foreground">Schema: python-lucidmotors</p>
+          <p className="text-xs text-muted-foreground/60">Not connected to live API</p>
         </div>
         <Shield className="h-4 w-4 text-muted-foreground/40 lg:hidden" />
       </div>
