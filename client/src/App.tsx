@@ -10,6 +10,7 @@ import OtaTimeline from './pages/ota-timeline';
 import ApiActions from './pages/api-actions';
 import Monitoring from './pages/monitoring';
 import Diagnostics from './pages/diagnostics';
+import LiveConnection from './pages/live-connection';
 import NotFound from './pages/not-found';
 
 function App() {
@@ -21,6 +22,7 @@ function App() {
             <Route path="/" component={Dashboard} />
             <Route path="/telemetry" component={Telemetry} />
             <Route path="/diagnostics" component={Diagnostics} />
+            <Route path="/live-connection" component={LiveConnection} />
             <Route path="/ota-timeline" component={OtaTimeline} />
             <Route path="/api-actions" component={ApiActions} />
             <Route path="/monitoring" component={Monitoring} />
