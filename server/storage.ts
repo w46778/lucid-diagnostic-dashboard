@@ -36,6 +36,7 @@ sqlite.exec(`
     interface_name TEXT,
     interface_address TEXT,
     capture_format TEXT,
+    capture_path TEXT,
     packet_count INTEGER NOT NULL DEFAULT 0,
     doip_frame_count INTEGER NOT NULL DEFAULT 0,
     uds_message_count INTEGER NOT NULL DEFAULT 0,
@@ -44,5 +45,12 @@ sqlite.exec(`
     created_at TEXT NOT NULL
   );
 `);
+
+// Lightweight startup migration for databases created before raw capture files
+// were linked to diagnostic sessions.
+const diagnosticSessionColumns = sqlite.prepare("PRAGMA table_info(diagnostic_sessions)").all() as Array<{ name: string }>;
+if (!diagnosticSessionColumns.some((column) => column.name === "capture_path")) {
+  sqlite.exec("ALTER TABLE diagnostic_sessions ADD COLUMN capture_path TEXT");
+}
 
 export { monitoringAlerts, monitoringChecks, diagnosticSessions };
