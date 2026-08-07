@@ -28,6 +28,7 @@ export const diagnosticSessions = sqliteTable("diagnostic_sessions", {
   interfaceName: text("interface_name"),
   interfaceAddress: text("interface_address"),
   captureFormat: text("capture_format"),
+  capturePath: text("capture_path"),
   packetCount: integer("packet_count").notNull().default(0),
   doipFrameCount: integer("doip_frame_count").notNull().default(0),
   udsMessageCount: integer("uds_message_count").notNull().default(0),
