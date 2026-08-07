@@ -57,13 +57,14 @@ export function getLiveEnvironmentInfo() {
     architecture: process.arch,
     hostname: os.hostname(),
     nodeVersion: process.version,
-    readOnlyTransportImplemented: false,
-    packetCaptureImplemented: false,
+    readOnlyTransportImplemented: true,
+    packetCaptureImplemented: true,
     socketTransmitImplemented: false,
     notes: [
-      'This endpoint only enumerates local network interfaces.',
-      'It does not open a raw capture handle, connect to a vehicle, broadcast DoIP discovery, or transmit UDS traffic.',
-      'The interface model is intentionally cross-platform and is compatible with a future Windows live-capture adapter.',
+      'Local network interfaces are enumerated through Node.js.',
+      'Passive DoIP capture is implemented through TShark/Npcap when installed.',
+      'The capture backend filters TCP/UDP port 13400 and feeds observed payloads into the existing DoIP/UDS decoders.',
+      'No DoIP discovery, routing activation, UDS request, or other vehicle transmission is implemented by the live adapter.',
     ],
   };
 }
