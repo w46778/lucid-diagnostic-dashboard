@@ -21,6 +21,13 @@ import {
 import { decodeDoipFrame, doipDecoderInfo } from "./diagnostics/doip";
 import { analyzeCapture } from "./diagnostics/pcap";
 import { getLiveEnvironmentInfo, listLiveNetworkInterfaces } from "./diagnostics/live";
+import {
+  getPassiveCaptureSnapshot,
+  getTsharkReadiness,
+  listTsharkInterfaces,
+  startPassiveCapture,
+  stopPassiveCapture,
+} from "./diagnostics/tshark";
 import { db } from "./storage";
 import { monitoringAlerts, monitoringChecks, diagnosticSessions } from "../shared/schema";
 import { desc } from "drizzle-orm";
@@ -59,11 +66,44 @@ export function registerRoutes(_server: Server, app: Express) {
     });
   });
 
-  app.get("/api/diagnostics/live", (_req, res) => {
+  app.get("/api/diagnostics/live", async (_req, res) => {
+    const readiness = await getTsharkReadiness();
+    let captureInterfaces: unknown[] = [];
+    if (readiness.installed) {
+      try {
+        captureInterfaces = await listTsharkInterfaces();
+      } catch {
+        captureInterfaces = [];
+      }
+    }
     res.json({
       environment: getLiveEnvironmentInfo(),
       interfaces: listLiveNetworkInterfaces(),
+      capture: {
+        readiness,
+        interfaces: captureInterfaces,
+        snapshot: getPassiveCaptureSnapshot(),
+      },
     });
+  });
+
+  app.get("/api/diagnostics/live/status", (req, res) => {
+    const after = Number.parseInt(String(req.query.after ?? "0"), 10);
+    res.json(getPassiveCaptureSnapshot(Number.isFinite(after) ? Math.max(0, after) : 0));
+  });
+
+  app.post("/api/diagnostics/live/start", async (req, res) => {
+    try {
+      const interfaceId = typeof req.body?.interfaceId === "string" ? req.body.interfaceId.trim() : "";
+      if (!interfaceId) return res.status(400).json({ message: "Select a TShark/Npcap capture interface first." });
+      res.json(await startPassiveCapture(interfaceId));
+    } catch (error) {
+      res.status(400).json({ message: error instanceof Error ? error.message : "Unable to start passive capture." });
+    }
+  });
+
+  app.post("/api/diagnostics/live/stop", (_req, res) => {
+    res.json(stopPassiveCapture());
   });
 
   app.get("/api/diagnostics/sessions", (_req, res) => {
