@@ -86,14 +86,14 @@ export default function Diagnostics() {
       <div className="grid gap-4 md:grid-cols-4">
         <Metric label="Capabilities" value={capabilities.length} icon={Activity} />
         <Metric label="Discovered ECUs" value={discoveredCount} icon={Cpu} />
-        <Metric label="DTCs" value={data?.dtcs.length ?? 0} icon={ShieldCheck} />
-        <Metric label="DIDs" value={data?.dids.length ?? 0} icon={Database} />
+        <Metric label="Mapped DTCs" value={data?.dtcs.length ?? 0} icon={ShieldCheck} />
+        <Metric label="Mapped DIDs" value={data?.dids.length ?? 0} icon={Database} />
       </div>
 
       <Card className="mt-6">
         <CardHeader><CardTitle className="flex items-center gap-2 text-sm"><Upload className="h-4 w-4 text-primary" /> PCAP / PCAPNG DoIP Analyzer</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">Load a Wireshark PCAP or PCAPNG capture. The analyzer extracts Ethernet/IPv4 DoIP traffic, reassembles observed TCP streams, builds an ECU logical-address inventory, and passively decodes UDS messages already present in the capture.</p>
+          <p className="text-sm text-muted-foreground">Load a Wireshark PCAP or PCAPNG capture. The analyzer extracts Ethernet/IPv4 DoIP traffic, reassembles observed TCP streams, builds an ECU logical-address inventory, and passively decodes UDS messages already present in the capture. “Mapped” counters above refer only to confirmed Lucid-specific mappings; observed identifiers are counted separately below.</p>
           <input type="file" accept=".pcap,.pcapng,application/vnd.tcpdump.pcap" disabled={captureLoading} onChange={(e) => { const file = e.target.files?.[0]; if (file) void analyzeFile(file); }} className="block w-full text-sm text-muted-foreground file:mr-4 file:rounded-md file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-medium file:text-primary-foreground" />
           {captureLoading && <p className="text-sm text-muted-foreground">Analyzing capture…</p>}
           {captureError && <p className="text-sm text-red-400">{captureError}</p>}
@@ -119,8 +119,14 @@ export default function Diagnostics() {
 
 function CaptureResults({ analysis }: { analysis: CaptureAnalysis }) {
   const udsFrames = analysis.frames.filter((f) => f.decoded.diagnosticMessage?.uds);
+  const observedDids = new Set(udsFrames.flatMap((frame) => frame.decoded.diagnosticMessage?.uds?.dids ?? []));
+  const dtcMessages = udsFrames.filter((frame) => {
+    const uds = frame.decoded.diagnosticMessage?.uds;
+    return uds?.serviceId === '0x19' || uds?.requestServiceId === '0x19';
+  }).length;
+
   return <div className="space-y-4">
-    <div className="grid gap-3 md:grid-cols-6"><SmallMetric label="Format" value={analysis.sourceFormat.toUpperCase()} /><SmallMetric label="Packets" value={analysis.packetCount} /><SmallMetric label="IPv4" value={analysis.networkFrames} /><SmallMetric label="TCP streams" value={analysis.tcpStreams} /><SmallMetric label="DoIP" value={analysis.doipFrames} /><SmallMetric label="UDS" value={udsFrames.length} /></div>
+    <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-8"><SmallMetric label="Format" value={analysis.sourceFormat.toUpperCase()} /><SmallMetric label="Packets" value={analysis.packetCount} /><SmallMetric label="IPv4" value={analysis.networkFrames} /><SmallMetric label="TCP streams" value={analysis.tcpStreams} /><SmallMetric label="DoIP" value={analysis.doipFrames} /><SmallMetric label="UDS" value={udsFrames.length} /><SmallMetric label="Observed DIDs" value={observedDids.size} /><SmallMetric label="DTC messages" value={dtcMessages} /></div>
     <div className="overflow-x-auto rounded-md border border-border"><table className="w-full text-left text-xs"><thead className="bg-muted/40 text-muted-foreground"><tr><th className="p-2">Logical address</th><th className="p-2">Messages</th><th className="p-2">Sent / Received</th><th className="p-2">IPs</th><th className="p-2">Transport</th><th className="p-2">VIN</th></tr></thead><tbody>{analysis.ecuInventory.map((ecu) => <tr key={ecu.logicalAddress} className="border-t border-border"><td className="p-2 font-mono">{ecu.logicalAddress}</td><td className="p-2 font-mono">{ecu.messageCount}</td><td className="p-2 font-mono">{ecu.sentCount} / {ecu.receivedCount}</td><td className="p-2 font-mono">{ecu.ips.join(', ') || '—'}</td><td className="p-2">{ecu.transports.join(', ')}</td><td className="p-2 font-mono">{ecu.vin || '—'}</td></tr>)}{!analysis.ecuInventory.length && <tr><td className="p-3 text-muted-foreground" colSpan={6}>No ECU logical addresses discovered.</td></tr>}</tbody></table></div>
     {udsFrames.length > 0 && <div><p className="mb-2 text-sm font-medium">Observed UDS traffic</p><div className="overflow-x-auto rounded-md border border-border"><table className="w-full text-left text-xs"><thead className="bg-muted/40 text-muted-foreground"><tr><th className="p-2">Source → Target</th><th className="p-2">Direction</th><th className="p-2">Service</th><th className="p-2">DID / Routine / NRC</th></tr></thead><tbody>{udsFrames.slice(0, 100).map((f, i) => { const d = f.decoded.diagnosticMessage!; const u = d.uds!; return <tr key={i} className="border-t border-border"><td className="p-2 font-mono">{d.sourceAddress} → {d.targetAddress}</td><td className="p-2">{u.direction}</td><td className="p-2 font-mono">{u.serviceId} · {u.serviceName}</td><td className="p-2 font-mono">{u.dids?.join(', ') || u.routineId || (u.negativeResponseCode ? `${u.negativeResponseCode} ${u.negativeResponseName ?? ''}` : '—')}</td></tr>; })}</tbody></table></div></div>}
     {analysis.parseErrors.length > 0 && <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-300">{analysis.parseErrors.length} parse warning(s). First: {analysis.parseErrors[0]}</div>}
