@@ -12,9 +12,15 @@ import {
   type OtaUpdate,
   type ApiAction,
 } from "../shared/data";
+import {
+  diagnosticCapabilities,
+  demoEcus,
+  demoDtcs,
+  demoDids,
+} from "../shared/diagnostics";
 import { db } from "./storage";
 import { monitoringAlerts, monitoringChecks } from "../shared/schema";
-import { eq, desc } from "drizzle-orm";
+import { desc } from "drizzle-orm";
 
 export function registerRoutes(_server: Server, app: Express) {
   // Telemetry endpoint — returns demo vehicle telemetry data
@@ -32,6 +38,23 @@ export function registerRoutes(_server: Server, app: Express) {
       isDemoMode: true,
       fields: demoTelemetry,
       grouped,
+    });
+  });
+
+  // Diagnostics research endpoint. Intentionally read-only: no flashing,
+  // configuration writes, security bypasses, or guessed proprietary IDs.
+  app.get("/api/diagnostics", (_req, res) => {
+    res.json({
+      mode: "research",
+      capabilities: diagnosticCapabilities,
+      ecus: demoEcus,
+      dtcs: demoDtcs,
+      dids: demoDids,
+      safeguards: {
+        writeOperationsEnabled: false,
+        securityBypassImplemented: false,
+        proprietaryMappingsPreFilled: false,
+      },
     });
   });
 
@@ -96,6 +119,7 @@ export function registerRoutes(_server: Server, app: Express) {
       otaUpdates: otaTimeline.length,
       apiActions: apiActions.length,
       monitoredSources: monitoringSources.length,
+      diagnosticCapabilities: diagnosticCapabilities.length,
       apiSource: apiSourceName,
       latestSoftware: "2.8.17",
       vehicleModel: "Lucid Air Grand Touring",
