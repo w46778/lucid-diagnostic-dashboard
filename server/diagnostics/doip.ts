@@ -1,3 +1,5 @@
+import { decodeUdsPayload, type UdsMessage } from './uds';
+
 export const DOIP_DEFAULT_PORT = 13400;
 
 const payloadTypeNames: Record<number, string> = {
@@ -28,6 +30,7 @@ export type DoipDiagnosticMessage = {
   sourceAddress: string;
   targetAddress: string;
   userDataHex: string;
+  uds?: UdsMessage;
 };
 
 export type DecodedDoipFrame = {
@@ -110,10 +113,12 @@ export function decodeDoipFrame(hexInput: string): DecodedDoipFrame {
   }
 
   if (payloadType === 0x8001 && payload.length >= 4) {
+    const userData = payload.subarray(4);
     result.diagnosticMessage = {
       sourceAddress: toHex(payload.readUInt16BE(0), 4),
       targetAddress: toHex(payload.readUInt16BE(2), 4),
-      userDataHex: bytesToHex(payload.subarray(4)),
+      userDataHex: bytesToHex(userData),
+      uds: decodeUdsPayload(userData),
     };
   }
 
@@ -128,11 +133,13 @@ export const doipDecoderInfo = {
     'generic-header',
     'vehicle-announcement-0x0004',
     'diagnostic-envelope-0x8001',
+    'passive-uds-service-decoder',
   ],
   doesTransmitToVehicle: false,
   notes: [
     'The decoder only parses bytes supplied by the user or an offline capture pipeline.',
     'It does not broadcast vehicle-identification requests, activate diagnostic routing, or send UDS commands.',
     'Lucid-specific ECU names and proprietary identifiers are intentionally not inferred from logical addresses.',
+    'Protected, write, routine, and programming UDS services are identified only when already present in captured traffic.',
   ],
 };
