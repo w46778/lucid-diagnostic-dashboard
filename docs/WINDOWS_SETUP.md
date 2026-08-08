@@ -9,6 +9,8 @@ The live adapter is intentionally passive:
 - captures observed Ethernet traffic through Wireshark/TShark + Npcap
 - applies capture filter `tcp port 13400 or udp port 13400`
 - records the same filtered traffic to a local raw `.pcapng` file
+- applies a configurable raw-capture size limit to protect laptop storage
+- validates that the raw PCAPNG can be read after the writer closes
 - decodes observed DoIP frames
 - passively decodes observed UDS messages
 - builds a cumulative logical ECU-address inventory
@@ -80,6 +82,17 @@ captures/lucid-doip-YYYY-MM-DDTHH-MM-SS-sssZ.pcapng
 
 You can override the directory with the `CAPTURE_DIR` environment variable. Raw captures are excluded from Git and should be treated as potentially sensitive vehicle diagnostic data.
 
+Raw recording has a default maximum file size of **2048 MB**. Override it before startup if needed:
+
+```powershell
+$env:RAW_CAPTURE_MAX_MB = "4096"
+npm run dev
+```
+
+When the configured limit is reached, the raw writer stops so it cannot continue growing the file, while the live decoder may continue observing traffic. The Live Connection page shows a warning when this happens.
+
+After the raw writer closes, the backend asks TShark to read the saved file locally. Live Connection reports the result as `VALID` or `INVALID`. When stopping a capture normally, wait for that validation state before saving the session summary. A zero-DoIP capture can still be saved because absence of matching traffic is useful diagnostic evidence.
+
 The diagnostic session history stores the local capture path together with packet, DoIP, UDS, and ECU counts so the original capture can be reprocessed with newer decoders later.
 
 ## Hardware path for the first passive test
@@ -107,7 +120,7 @@ Use the correct automotive Ethernet harness/connector for the target link. Do no
 1. Start the dashboard.
 2. Open **Live Connection**.
 3. Confirm `TShark / Npcap = Ready`.
-4. Confirm `Raw recording = PCAPNG enabled`.
+4. Confirm `Raw recording = PCAPNG enabled` and review the configured size limit.
 5. Confirm `Vehicle Transmit = DISABLED`.
 6. Confirm the expected Windows Ethernet adapter appears.
 7. Confirm TShark capture interfaces are listed.
@@ -127,13 +140,14 @@ The initial vehicle test should be observation-only:
 6. Confirm a raw PCAPNG path appears and its size begins increasing when matching traffic is present.
 7. Observe packet count, DoIP frame count, ECU logical addresses, and any already-present UDS traffic.
 8. Stop capture.
-9. Save the capture summary and confirm the raw capture path appears in session history.
+9. Confirm Raw Validation changes from `PENDING` to `VALID` or inspect any validation warning.
+10. Save the capture summary and confirm the raw capture path appears in session history. Save the session even when no DoIP frames were observed if the test itself was valid.
 
 No diagnostic request needs to be sent for this first test.
 
 ## Automated Windows validation
 
-GitHub Actions now validates the branch on `windows-latest` by running:
+GitHub Actions validates the branch on `windows-latest` by running:
 
 ```text
 npm ci
