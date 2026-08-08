@@ -4,6 +4,7 @@ import { DashboardLayout } from '@/components/dashboard-layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Battery, GitBranch, Code2, Bell, MapPin, Car } from 'lucide-react';
 import { Link } from 'wouter';
+import type { ApiActionsResponse, OtaTimelineResponse } from '@/types/api';
 
 interface Stats {
   telemetryFields: number; otaUpdates: number; apiActions: number; monitoredSources: number;
@@ -12,8 +13,8 @@ interface Stats {
 
 export default function Dashboard() {
   const { data: stats } = useQuery<Stats>({ queryKey: ['/api/stats'] });
-  const { data: otaData } = useQuery<any>({ queryKey: ['/api/ota-timeline'] });
-  const { data: actionsData } = useQuery<any>({ queryKey: ['/api/actions'] });
+  const { data: otaData } = useQuery<OtaTimelineResponse>({ queryKey: ['/api/ota-timeline'] });
+  const { data: actionsData } = useQuery<ApiActionsResponse>({ queryKey: ['/api/actions'] });
 
   const kpiCards = [
     { label: 'Telemetry Fields', value: stats?.telemetryFields ?? '—', icon: Radio, color: 'text-blue-400', href: '/telemetry' },
@@ -34,7 +35,7 @@ export default function Dashboard() {
         <Card><CardHeader><CardTitle className="flex items-center gap-2 text-sm"><MapPin className="h-4 w-4 text-blue-400" /> Location & Climate</CardTitle></CardHeader><CardContent className="space-y-2"><StatusRow label="Location" value="New Berlin, WI" /><StatusRow label="GPS" value="43.05°N, 87.91°W" /><StatusRow label="Odometer" value="14,532 mi" /><StatusRow label="Cabin Temp" value="21.0°C" /><StatusRow label="HVAC" value="Off" /></CardContent></Card>
       </div>
 
-      <Card className="mt-6"><CardHeader><CardTitle className="flex items-center gap-2 text-sm"><GitBranch className="h-4 w-4 text-green-400" /> Recent OTA Updates</CardTitle></CardHeader><CardContent><div className="space-y-2">{otaData?.updates?.slice(-5).reverse().map((update: any) => <div key={update.version} className="flex items-center gap-3 rounded-md border border-border p-2"><CategoryBadge category={update.category} /><div className="flex-1"><p className="text-sm font-medium">{update.version} — {update.title}</p><p className="text-xs text-muted-foreground">{update.date}</p></div></div>)}</div></CardContent></Card>
+      <Card className="mt-6"><CardHeader><CardTitle className="flex items-center gap-2 text-sm"><GitBranch className="h-4 w-4 text-green-400" /> Recent OTA Updates</CardTitle></CardHeader><CardContent><div className="space-y-2">{otaData?.updates?.slice(-5).reverse().map((update) => <div key={update.version} className="flex items-center gap-3 rounded-md border border-border p-2"><CategoryBadge category={update.category} /><div className="flex-1"><p className="text-sm font-medium">{update.version} — {update.title}</p><p className="text-xs text-muted-foreground">{update.date}</p></div></div>)}</div></CardContent></Card>
 
       <Card className="mt-6"><CardHeader><CardTitle className="flex items-center gap-2 text-sm"><Code2 className="h-4 w-4 text-amber-400" /> Decoded API Actions Summary</CardTitle></CardHeader><CardContent><div className="grid grid-cols-2 gap-3 md:grid-cols-4"><ActionStat label="Total Methods" value={actionsData?.total ?? '—'} /><ActionStat label="Tested in Script" value={actionsData?.testedInScript ?? '—'} /><ActionStat label="Source" value="nshp/python-lucidmotors" /><ActionStat label="Script" value="test_all_actions.py" /></div></CardContent></Card>
     </DashboardLayout>
