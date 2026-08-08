@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Code2, Search, ExternalLink, CheckCircle2, Github } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { ApiActionsResponse } from '@/types/api';
 
 type ActionCategory = 'vehicle-control' | 'charging' | 'climate' | 'security' | 'software' | 'telemetry' | 'session';
 
@@ -23,18 +24,18 @@ export default function ApiActions() {
   const [activeCategory, setActiveCategory] = useState<ActionCategory | 'all'>('all');
   const [showTestedOnly, setShowTestedOnly] = useState(false);
 
-  const { data, isLoading } = useQuery<any>({
+  const { data, isLoading } = useQuery<ApiActionsResponse>({
     queryKey: ['/api/actions'],
   });
 
-  const actions = (data?.actions || []).filter((a: any) => {
-    const matchesSearch = !search || a.name.toLowerCase().includes(search.toLowerCase()) || a.description.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = activeCategory === 'all' || a.category === activeCategory;
-    const matchesTested = !showTestedOnly || a.testedInActions;
+  const actions = (data?.actions ?? []).filter((action) => {
+    const matchesSearch = !search || action.name.toLowerCase().includes(search.toLowerCase()) || action.description.toLowerCase().includes(search.toLowerCase());
+    const matchesCategory = activeCategory === 'all' || action.category === activeCategory;
+    const matchesTested = !showTestedOnly || action.testedInActions;
     return matchesSearch && matchesCategory && matchesTested;
   });
 
-  const categories = Array.from(new Set((data?.actions || []).map((a: any) => a.category))) as ActionCategory[];
+  const categories = Array.from(new Set((data?.actions ?? []).map((action) => action.category))) as ActionCategory[];
 
   return (
     <DashboardLayout title="Decoded API Actions" subtitle="Community-decoded Lucid Motors API methods from nshp/python-lucidmotors">
@@ -75,7 +76,7 @@ export default function ApiActions() {
       <div className="mb-4 flex flex-wrap gap-2">
         <CategoryButton label="All" active={activeCategory === 'all'} onClick={() => setActiveCategory('all')} count={data?.total ?? 0} />
         {categories.map((cat) => {
-          const count = (data?.actions || []).filter((a: any) => a.category === cat).length;
+          const count = (data?.actions ?? []).filter((action) => action.category === cat).length;
           return <CategoryButton key={cat} label={categoryLabels[cat] || cat} active={activeCategory === cat} onClick={() => setActiveCategory(cat)} count={count} />;
         })}
       </div>
@@ -89,7 +90,7 @@ export default function ApiActions() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm" data-testid="table-actions">
                 <thead><tr className="border-b border-border text-left text-xs text-muted-foreground"><th className="pb-2 pr-4 font-medium">Method</th><th className="pb-2 pr-4 font-medium">Category</th><th className="pb-2 pr-4 font-medium">Description</th><th className="pb-2 pr-4 font-medium">Signature</th><th className="pb-2 pr-4 font-medium">Tested</th></tr></thead>
-                <tbody>{actions.map((action: any) => <tr key={action.name} className="border-b border-border/50 last:border-0 hover:bg-accent/30" data-testid={`action-${action.name}`}><td className="py-3 pr-4"><p className="font-mono text-sm font-semibold text-primary">{action.name}</p></td><td className="py-3 pr-4"><span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{categoryLabels[action.category as ActionCategory] || action.category}</span></td><td className="py-3 pr-4 max-w-xs"><p className="text-xs text-muted-foreground">{action.description}</p></td><td className="py-3 pr-4"><code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{action.methodSignature}</code></td><td className="py-3 pr-4">{action.testedInActions ? <span className="flex items-center gap-1 text-xs text-green-400" data-testid={`tested-${action.name}`}><CheckCircle2 className="h-3.5 w-3.5" />Yes</span> : <span className="text-xs text-muted-foreground/50">—</span>}</td></tr>)}</tbody>
+                <tbody>{actions.map((action) => <tr key={action.name} className="border-b border-border/50 last:border-0 hover:bg-accent/30" data-testid={`action-${action.name}`}><td className="py-3 pr-4"><p className="font-mono text-sm font-semibold text-primary">{action.name}</p></td><td className="py-3 pr-4"><span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{categoryLabels[action.category] || action.category}</span></td><td className="py-3 pr-4 max-w-xs"><p className="text-xs text-muted-foreground">{action.description}</p></td><td className="py-3 pr-4"><code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{action.methodSignature}</code></td><td className="py-3 pr-4">{action.testedInActions ? <span className="flex items-center gap-1 text-xs text-green-400" data-testid={`tested-${action.name}`}><CheckCircle2 className="h-3.5 w-3.5" />Yes</span> : <span className="text-xs text-muted-foreground/50">—</span>}</td></tr>)}</tbody>
               </table>
             </div>
           </CardContent>
