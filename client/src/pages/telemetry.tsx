@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Battery, MapPin, Thermometer, Car, Search, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { TelemetryResponse } from '@/types/api';
+import type { TelemetryField } from '@shared/data';
 
 type TelemetryCategory = 'battery' | 'location' | 'climate' | 'vehicle';
 
@@ -19,19 +21,19 @@ export default function Telemetry() {
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<TelemetryCategory | 'all'>('all');
 
-  const { data, isLoading, refetch, isFetching } = useQuery({
+  const { data, isLoading, refetch, isFetching } = useQuery<TelemetryResponse>({
     queryKey: ['/api/telemetry'],
     refetchInterval: 30000,
     staleTime: 25000,
   });
 
-  const fields = (data?.fields || []).filter((f: any) => {
-    const matchesSearch = !search || f.label.toLowerCase().includes(search.toLowerCase()) || f.key.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = activeCategory === 'all' || f.category === activeCategory;
+  const fields = (data?.fields ?? []).filter((field) => {
+    const matchesSearch = !search || field.label.toLowerCase().includes(search.toLowerCase()) || field.key.toLowerCase().includes(search.toLowerCase());
+    const matchesCategory = activeCategory === 'all' || field.category === activeCategory;
     return matchesSearch && matchesCategory;
   });
 
-  const grouped: Record<string, any[]> = {};
+  const grouped: Record<string, TelemetryField[]> = {};
   for (const field of fields) {
     if (!grouped[field.category]) grouped[field.category] = [];
     grouped[field.category].push(field);
@@ -39,7 +41,6 @@ export default function Telemetry() {
 
   return (
     <DashboardLayout title="Real-Time Telemetry" subtitle="Vehicle data from python-lucidmotors API · Updates every 30s">
-      {/* Controls */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -62,11 +63,10 @@ export default function Telemetry() {
         </button>
       </div>
 
-      {/* Category Filters */}
       <div className="mb-4 flex flex-wrap gap-2">
-        <CategoryButton label="All" active={activeCategory === 'all'} onClick={() => setActiveCategory('all')} count={data?.fields?.length || 0} />
+        <CategoryButton label="All" active={activeCategory === 'all'} onClick={() => setActiveCategory('all')} count={data?.fields.length ?? 0} />
         {(Object.keys(categoryConfig) as TelemetryCategory[]).map((cat) => {
-          const count = (data?.fields || []).filter((f: any) => f.category === cat).length;
+          const count = (data?.fields ?? []).filter((field) => field.category === cat).length;
           return (
             <CategoryButton
               key={cat}
@@ -79,14 +79,12 @@ export default function Telemetry() {
         })}
       </div>
 
-      {/* Last Updated */}
       <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground" data-testid="last-updated">
         <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
         Last updated: {data?.lastUpdated ? new Date(data.lastUpdated).toLocaleTimeString() : '—'}
         {data?.isDemoMode && <span className="ml-2 rounded-full bg-amber-500/10 px-2 py-0.5 text-amber-500">Demo Data</span>}
       </div>
 
-      {/* Telemetry Table */}
       {isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 8 }).map((_, i) => (

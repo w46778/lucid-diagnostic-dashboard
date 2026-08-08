@@ -8,6 +8,11 @@ data.db-shm
 data.db-wal
 data.db-journal
 
+# Raw diagnostic captures stay local to the field laptop
+captures/
+*.pcap
+*.pcapng
+
 .env
 .env.*
 !.env.example

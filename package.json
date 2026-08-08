@@ -4,10 +4,11 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "NODE_ENV=development tsx server/index.ts",
+    "dev": "tsx server/index.ts",
     "build": "tsx script/build.ts",
-    "start": "NODE_ENV=production node dist/index.cjs",
+    "start": "node dist/index.cjs --production",
     "check": "tsc",
+    "test": "tsx --test",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
