@@ -9,6 +9,7 @@ const execFileAsync = promisify(execFile);
 const CAPTURE_FILTER = 'tcp port 13400 or udp port 13400';
 const MAX_EVENTS = 2000;
 const MAX_STREAM_BUFFER = 4 * 1024 * 1024;
+const DEFAULT_RAW_CAPTURE_MAX_MB = 2048;
 
 type TsharkProcess = ChildProcessByStdio<null, Readable, Readable>;
 type TsharkRawProcess = ChildProcessByStdio<null, null, Readable>;
@@ -44,6 +45,11 @@ type CaptureState = {
   error?: string;
   rawCapturePath?: string;
   rawCaptureError?: string;
+  rawCaptureMaxMb: number;
+  rawCaptureLimitReached: boolean;
+  rawCaptureValidation: 'pending' | 'valid' | 'invalid';
+  rawCaptureValidationError?: string;
+  rawStopRequested: boolean;
   stderrTail: string[];
   packetLines: number;
   doipFrames: number;
@@ -58,6 +64,10 @@ type CaptureState = {
 
 const state: CaptureState = {
   running: false,
+  rawCaptureMaxMb: DEFAULT_RAW_CAPTURE_MAX_MB,
+  rawCaptureLimitReached: false,
+  rawCaptureValidation: 'pending',
+  rawStopRequested: false,
   stderrTail: [],
   packetLines: 0,
   doipFrames: 0,
@@ -89,11 +99,50 @@ async function resolveTshark(): Promise<string> {
   throw new Error('TShark was not found. Install Wireshark with Npcap and ensure tshark.exe is available.');
 }
 
+function getRawCaptureMaxMb(): number {
+  const configured = Number.parseInt(process.env.RAW_CAPTURE_MAX_MB?.trim() || '', 10);
+  if (!Number.isFinite(configured) || configured <= 0) return DEFAULT_RAW_CAPTURE_MAX_MB;
+  return Math.min(configured, 102400);
+}
+
 function createRawCapturePath(): string {
   const captureDir = path.resolve(process.env.CAPTURE_DIR?.trim() || 'captures');
   fs.mkdirSync(captureDir, { recursive: true });
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   return path.join(captureDir, `lucid-doip-${timestamp}.pcapng`);
+}
+
+async function validateRawCapture(executable: string, capturePath: string, maxMb: number) {
+  if (state.rawCapturePath !== capturePath) return;
+
+  try {
+    const stat = fs.statSync(capturePath);
+    if (!stat.isFile() || stat.size === 0) throw new Error('Raw capture file is empty.');
+
+    if (state.running && !state.rawStopRequested) {
+      const configuredBytes = maxMb * 1024 * 1024;
+      if (stat.size >= configuredBytes * 0.98) {
+        state.rawCaptureLimitReached = true;
+      } else if (!state.rawCaptureError) {
+        state.rawCaptureError = 'Raw PCAPNG writer stopped before the live capture ended.';
+      }
+    }
+
+    await execFileAsync(executable, ['-r', capturePath, '-c', '1', '-Q'], {
+      windowsHide: true,
+      timeout: 10000,
+    });
+
+    if (state.rawCapturePath === capturePath) {
+      state.rawCaptureValidation = 'valid';
+      state.rawCaptureValidationError = undefined;
+    }
+  } catch (error) {
+    if (state.rawCapturePath === capturePath) {
+      state.rawCaptureValidation = 'invalid';
+      state.rawCaptureValidationError = error instanceof Error ? error.message : 'Unable to validate raw PCAPNG capture.';
+    }
+  }
 }
 
 export async function getTsharkReadiness() {
@@ -107,10 +156,12 @@ export async function getTsharkReadiness() {
       captureFilter: CAPTURE_FILTER,
       activeTransmit: false,
       rawCaptureEnabled: true,
+      rawCaptureMaxMb: getRawCaptureMaxMb(),
       notes: [
         'TShark is invoked in capture mode only.',
         'Capture is restricted to TCP/UDP port 13400 (DoIP).',
         'A second passive TShark process records the filtered packets to a local PCAPNG file for later re-analysis.',
+        'Raw recording has a configurable file-size safety limit and is checked for readability after the writer closes.',
         'This module does not generate DoIP discovery, routing activation, UDS requests, or other vehicle traffic.',
       ],
     };
@@ -122,6 +173,7 @@ export async function getTsharkReadiness() {
       captureFilter: CAPTURE_FILTER,
       activeTransmit: false,
       rawCaptureEnabled: false,
+      rawCaptureMaxMb: getRawCaptureMaxMb(),
       error: error instanceof Error ? error.message : 'Unable to detect TShark.',
     };
   }
@@ -279,6 +331,7 @@ export async function startPassiveCapture(interfaceId: string) {
 
   const executable = await resolveTshark();
   const rawCapturePath = createRawCapturePath();
+  const rawCaptureMaxMb = getRawCaptureMaxMb();
 
   Object.assign(state, {
     running: true,
@@ -288,6 +341,11 @@ export async function startPassiveCapture(interfaceId: string) {
     error: undefined,
     rawCapturePath,
     rawCaptureError: undefined,
+    rawCaptureMaxMb,
+    rawCaptureLimitReached: false,
+    rawCaptureValidation: 'pending' as const,
+    rawCaptureValidationError: undefined,
+    rawStopRequested: false,
     stderrTail: [],
     packetLines: 0,
     doipFrames: 0,
@@ -300,6 +358,7 @@ export async function startPassiveCapture(interfaceId: string) {
 
   const rawArgs = [
     '-n', '-i', interfaceId.trim(), '-f', CAPTURE_FILTER,
+    '-a', `filesize:${rawCaptureMaxMb * 1024}`,
     '-F', 'pcapng', '-w', rawCapturePath,
   ];
   const rawChild = spawn(executable, rawArgs, { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
@@ -313,9 +372,10 @@ export async function startPassiveCapture(interfaceId: string) {
     state.rawProcess = undefined;
     if (code && !state.rawCaptureError) {
       state.rawCaptureError = `Raw PCAPNG writer exited with code ${code}${signal ? ` (${signal})` : ''}.`;
-    } else if (state.running && !state.rawCaptureError) {
-      state.rawCaptureError = 'Raw PCAPNG writer stopped before the live capture ended.';
     }
+  });
+  rawChild.on('close', () => {
+    void validateRawCapture(executable, rawCapturePath, rawCaptureMaxMb);
   });
 
   const args = [
@@ -341,6 +401,7 @@ export async function startPassiveCapture(interfaceId: string) {
     state.running = false;
     state.stoppedAt = new Date().toISOString();
     state.process = undefined;
+    state.rawStopRequested = true;
     state.rawProcess?.kill('SIGTERM');
   });
   child.on('exit', (code, signal) => {
@@ -348,6 +409,7 @@ export async function startPassiveCapture(interfaceId: string) {
     state.running = false;
     state.stoppedAt = new Date().toISOString();
     state.process = undefined;
+    state.rawStopRequested = true;
     state.rawProcess?.kill('SIGTERM');
     if (code && !state.error) state.error = `TShark exited with code ${code}${signal ? ` (${signal})` : ''}.`;
   });
@@ -356,6 +418,7 @@ export async function startPassiveCapture(interfaceId: string) {
 
 export function stopPassiveCapture() {
   if (state.running) {
+    state.rawStopRequested = true;
     state.process?.kill('SIGTERM');
     state.rawProcess?.kill('SIGTERM');
   }
@@ -383,6 +446,10 @@ export function getPassiveCaptureSnapshot(afterEventId = 0) {
     rawCapturePath: state.rawCapturePath ?? null,
     rawCaptureBytes,
     rawCaptureError: state.rawCaptureError ?? null,
+    rawCaptureMaxMb: state.rawCaptureMaxMb,
+    rawCaptureLimitReached: state.rawCaptureLimitReached,
+    rawCaptureValidation: state.rawCaptureValidation,
+    rawCaptureValidationError: state.rawCaptureValidationError ?? null,
     stderrTail: state.stderrTail,
     captureFilter: CAPTURE_FILTER,
     packetLines: state.packetLines,
