@@ -3,6 +3,7 @@ import { DashboardLayout } from '@/components/dashboard-layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Bell, Github, MessageSquare, Shield, Mail, ExternalLink, Clock, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import type { MonitoringAlertsResponse, MonitoringSourcesResponse, MonitoringStatusResponse } from '@/types/api';
 
 type SourceType = 'github' | 'forum' | 'nhtsa';
 
@@ -13,21 +14,20 @@ const sourceTypeConfig: Record<SourceType, { icon: any; color: string; label: st
 };
 
 export default function Monitoring() {
-  const { data: sourcesData } = useQuery({
+  const { data: sourcesData } = useQuery<MonitoringSourcesResponse>({
     queryKey: ['/api/monitoring/sources'],
   });
 
-  const { data: alertsData } = useQuery({
+  const { data: alertsData } = useQuery<MonitoringAlertsResponse>({
     queryKey: ['/api/monitoring/alerts'],
   });
 
-  const { data: statusData } = useQuery({
+  useQuery<MonitoringStatusResponse>({
     queryKey: ['/api/monitoring/status'],
   });
 
   return (
     <DashboardLayout title="Monitoring & Alerts" subtitle="Email alerts for new community API breakthroughs and software-issue reports">
-      {/* Monitoring Status Banner */}
       <Card className="mb-6 border-primary/20 bg-primary/5" data-testid="monitoring-banner">
         <CardContent className="flex items-center gap-4 p-4">
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
@@ -48,15 +48,13 @@ export default function Monitoring() {
         </CardContent>
       </Card>
 
-      {/* Monitoring Stats */}
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatCard label="Monitored Sources" value={sourcesData?.sources?.length ?? '—'} icon={Bell} color="text-blue-400" />
-        <StatCard label="GitHub Sources" value={(sourcesData?.sources || []).filter((s: any) => s.type === 'github').length} icon={Github} color="text-blue-400" />
-        <StatCard label="Forum Sources" value={(sourcesData?.sources || []).filter((s: any) => s.type === 'forum').length} icon={MessageSquare} color="text-green-400" />
+        <StatCard label="Monitored Sources" value={sourcesData?.sources.length ?? '—'} icon={Bell} color="text-blue-400" />
+        <StatCard label="GitHub Sources" value={(sourcesData?.sources ?? []).filter((source) => source.type === 'github').length} icon={Github} color="text-blue-400" />
+        <StatCard label="Forum Sources" value={(sourcesData?.sources ?? []).filter((source) => source.type === 'forum').length} icon={MessageSquare} color="text-green-400" />
         <StatCard label="Alerts Found" value={alertsData?.total ?? 0} icon={Mail} color="text-amber-400" />
       </div>
 
-      {/* Monitored Sources */}
       <Card className="mb-6">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-sm">
@@ -66,8 +64,8 @@ export default function Monitoring() {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {(sourcesData?.sources || []).map((source: any) => {
-              const config = sourceTypeConfig[source.type as SourceType] || sourceTypeConfig.forum;
+            {(sourcesData?.sources ?? []).map((source) => {
+              const config = sourceTypeConfig[source.type] || sourceTypeConfig.forum;
               const Icon = config.icon;
               return (
                 <div key={source.name} className="flex items-center gap-3 rounded-md border border-border p-3" data-testid={`source-${source.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}>
@@ -105,7 +103,6 @@ export default function Monitoring() {
         </CardContent>
       </Card>
 
-      {/* Alert Configuration */}
       <Card className="mb-6">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-sm">
@@ -125,7 +122,6 @@ export default function Monitoring() {
         </CardContent>
       </Card>
 
-      {/* Recent Alerts */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-sm">
@@ -135,7 +131,7 @@ export default function Monitoring() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {(alertsData?.alerts || []).length === 0 ? (
+          {(alertsData?.alerts ?? []).length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center" data-testid="no-alerts">
               <CheckCircle2 className="h-8 w-8 text-muted-foreground/40" />
               <p className="mt-2 text-sm text-muted-foreground">No alerts yet</p>
@@ -143,7 +139,7 @@ export default function Monitoring() {
             </div>
           ) : (
             <div className="space-y-3">
-              {alertsData.alerts.map((alert: any) => (
+              {(alertsData?.alerts ?? []).map((alert) => (
                 <div key={alert.id} className="flex items-start gap-3 rounded-md border border-border p-3" data-testid={`alert-${alert.id}`}>
                   <span className={cn(
                     'mt-0.5 rounded px-1.5 py-0.5 text-xs font-medium',
