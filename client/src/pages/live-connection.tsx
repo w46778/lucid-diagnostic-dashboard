@@ -51,6 +51,10 @@ type CaptureSnapshot = {
   rawCapturePath?: string | null;
   rawCaptureBytes?: number | null;
   rawCaptureError?: string | null;
+  rawCaptureMaxMb: number;
+  rawCaptureLimitReached: boolean;
+  rawCaptureValidation: 'pending' | 'valid' | 'invalid';
+  rawCaptureValidationError?: string | null;
   stderrTail: string[];
   captureFilter: string;
   packetLines: number;
@@ -93,6 +97,7 @@ type LiveResponse = {
       captureFilter: string;
       activeTransmit: boolean;
       rawCaptureEnabled?: boolean;
+      rawCaptureMaxMb?: number;
       error?: string;
     };
     interfaces: CaptureInterface[];
@@ -120,7 +125,7 @@ export default function LiveConnection() {
   const { data, refetch: refetchLive } = useQuery<LiveResponse>({ queryKey: ['/api/diagnostics/live'] });
   const { data: capture, refetch: refetchCapture } = useQuery<CaptureSnapshot>({
     queryKey: ['/api/diagnostics/live/status'],
-    refetchInterval: (query) => query.state.data?.running ? 1000 : 3000,
+    refetchInterval: (query) => query.state.data?.running || query.state.data?.rawCaptureValidation === 'pending' ? 1000 : 3000,
   });
   const { data: sessionData } = useQuery<{ sessions: Session[] }>({ queryKey: ['/api/diagnostics/sessions'] });
   const suggested = useMemo(() => data?.interfaces.filter((item) => item.suggestedForAutomotiveEthernet) ?? [], [data]);
@@ -133,6 +138,7 @@ export default function LiveConnection() {
   const selectedInterface = data?.interfaces.find((item) => `${item.name}|${item.address}` === selected);
   const tsharkInterfaces = data?.capture.interfaces ?? [];
   const udsCount = capture?.udsMessages ?? 0;
+  const rawValidationPending = Boolean(capture?.rawCapturePath && !capture.running && capture.rawCaptureValidation === 'pending');
 
   async function saveSession() {
     if (!selectedInterface || !data) return;
@@ -180,7 +186,7 @@ export default function LiveConnection() {
       const response = await fetch('/api/diagnostics/live/stop', { method: 'POST' });
       const body = await response.json();
       if (!response.ok) throw new Error(body.message || 'Unable to stop passive capture.');
-      setMessage('Passive capture stopped. Raw PCAPNG file is preserved locally.');
+      setMessage('Passive capture stopped. Raw PCAPNG is being finalized and validated locally.');
       await refetchCapture();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Unable to stop passive capture.');
@@ -205,7 +211,7 @@ export default function LiveConnection() {
           doipFrameCount: capture.doipFrames,
           udsMessageCount: udsCount,
           ecuCount: capture.ecuInventory.length,
-          notes: `Capture filter: ${capture.captureFilter}. Transmit enabled: ${capture.transmitEnabled}.`,
+          notes: `Capture filter: ${capture.captureFilter}. Raw validation: ${capture.rawCaptureValidation}. Raw limit reached: ${capture.rawCaptureLimitReached}. Transmit enabled: ${capture.transmitEnabled}.`,
         }),
       });
       if (!response.ok) throw new Error((await response.json()).message || 'Unable to save capture session.');
@@ -245,20 +251,25 @@ export default function LiveConnection() {
               </select>
               <div className="flex flex-wrap gap-2">
                 {!capture?.running ? <Button onClick={startCapture} disabled={!captureInterfaceId || captureBusy}><Play className="mr-2 h-4 w-4" />Start passive capture</Button> : <Button variant="destructive" onClick={stopCapture} disabled={captureBusy}><Square className="mr-2 h-4 w-4" />Stop capture</Button>}
-                <Button variant="outline" onClick={saveCaptureSession} disabled={!capture?.doipFrames || saving}><Save className="mr-2 h-4 w-4" />Save capture summary</Button>
+                <Button variant="outline" onClick={saveCaptureSession} disabled={!capture?.startedAt || capture.running || rawValidationPending || saving}><Save className="mr-2 h-4 w-4" />Save capture summary</Button>
               </div>
+              {rawValidationPending && <p className="text-xs text-muted-foreground">Finalizing and validating the raw PCAPNG before the session can be saved…</p>}
             </>
           )}
 
-          <div className="grid gap-3 md:grid-cols-6">
+          <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-8">
             <Mini label="State" value={capture?.running ? 'CAPTURING' : 'Stopped'} />
             <Mini label="Packet rows" value={capture?.packetLines ?? 0} />
             <Mini label="DoIP frames" value={capture?.doipFrames ?? 0} />
             <Mini label="UDS decoded" value={udsCount} />
             <Mini label="ECU addresses" value={capture?.ecuInventory.length ?? 0} />
             <Mini label="Raw PCAPNG" value={formatBytes(capture?.rawCaptureBytes)} />
+            <Mini label="Raw limit" value={`${capture?.rawCaptureMaxMb ?? data?.capture.readiness.rawCaptureMaxMb ?? '—'} MB`} />
+            <Mini label="Raw validation" value={capture?.rawCapturePath ? capture.rawCaptureValidation.toUpperCase() : '—'} />
           </div>
           {capture?.rawCapturePath && <div className="rounded-md border border-border bg-muted/20 p-3 text-xs"><span className="text-muted-foreground">Raw capture: </span><span className="break-all font-mono">{capture.rawCapturePath}</span></div>}
+          {capture?.rawCaptureLimitReached && <p className="text-sm text-amber-400">Raw recording reached its configured size limit. Live decoding may have continued after raw recording stopped.</p>}
+          {capture?.rawCaptureValidation === 'invalid' && <p className="text-sm text-red-400">Raw PCAPNG validation failed: {capture.rawCaptureValidationError ?? 'unknown validation error'}</p>}
           {capture?.rawCaptureError && <p className="text-sm text-amber-400">Raw capture warning: {capture.rawCaptureError}</p>}
           {capture?.error && <p className="text-sm text-red-400">{capture.error}</p>}
           {message && <p className="text-sm text-muted-foreground">{message}</p>}
@@ -314,7 +325,7 @@ export default function LiveConnection() {
             <Row label="Node.js" value={data?.environment.nodeVersion ?? '—'} />
             <Row label="TShark" value={data?.capture.readiness.version ?? 'Not detected'} />
             <Row label="Capture backend" value={data?.capture.readiness.installed ? 'TShark + Npcap' : 'Unavailable'} />
-            <Row label="Raw recording" value={data?.capture.readiness.rawCaptureEnabled ? 'PCAPNG enabled' : 'Unavailable'} />
+            <Row label="Raw recording" value={data?.capture.readiness.rawCaptureEnabled ? `PCAPNG · ${data.capture.readiness.rawCaptureMaxMb ?? '—'} MB limit` : 'Unavailable'} />
             <Row label="Vehicle transmit" value="Disabled by design" />
           </div>
         </CardContent>
